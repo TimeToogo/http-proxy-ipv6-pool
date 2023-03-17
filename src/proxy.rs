@@ -64,7 +64,7 @@ impl Proxy {
         let bind_addr = get_rand_ipv6(self.ipv6, self.prefix_len);
         let mut http = HttpConnector::new();
         http.set_local_address(Some(bind_addr));
-        println!("{} via {bind_addr}", req.uri().host().unwrap_or_default());
+        eprintln!("{} via {bind_addr}", req.uri().host().unwrap_or_default());
 
         let client = Client::builder()
             .http1_title_case_headers(true)
@@ -79,19 +79,32 @@ impl Proxy {
         A: AsyncRead + AsyncWrite + Unpin + ?Sized,
     {
         if let Ok(addrs) = addr_str.to_socket_addrs() {
-            for addr in addrs {
+            let (addr_v6, addr_v4): (Vec<_>, _) = addrs.partition(|i| i.is_ipv6());
+            // try ipv6 using random addr
+            for addr in addr_v6 {
                 let socket = TcpSocket::new_v6()?;
                 let bind_addr = get_rand_ipv6_socket_addr(self.ipv6, self.prefix_len);
                 if socket.bind(bind_addr).is_ok() {
-                    println!("{addr_str} via {bind_addr}");
+                    eprintln!("{addr_str} via {bind_addr}");
                     if let Ok(mut server) = socket.connect(addr).await {
                         tokio::io::copy_bidirectional(upgraded, &mut server).await?;
                         return Ok(());
                     }
                 }
             }
+            // fallback to standard ipv4
+            for addr in addr_v4 {
+                let socket = TcpSocket::new_v4()?;
+                eprintln!("{addr_str} via ipv4");
+                if let Ok(mut server) = socket.connect(addr).await {
+                    tokio::io::copy_bidirectional(upgraded, &mut server).await?;
+                    return Ok(());
+                }
+            }
+
+            eprintln!("failed to connect to {addr_str}");
         } else {
-            println!("error: {addr_str}");
+            eprintln!("dns error: {addr_str}");
         }
 
         Ok(())
