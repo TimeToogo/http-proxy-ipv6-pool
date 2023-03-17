@@ -25,6 +25,7 @@ pub async fn start_proxy(
         }))
     });
 
+    eprintln!("listening on {listen_addr:?}");
     Server::bind(&listen_addr)
         .http1_preserve_header_case(true)
         .http1_title_case_headers(true)
